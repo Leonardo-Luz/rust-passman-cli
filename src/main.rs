@@ -8,6 +8,8 @@ use rpassword::prompt_password;
 
 use clap::{Parser, Subcommand};
 
+use self::database::queries::update_password_by_id;
+
 #[derive(Parser)]
 #[command(name = "passman", about = "Encrypted Password Manager CLI")]
 pub struct Cli {
@@ -49,6 +51,12 @@ enum Commands {
 
     /// Delete password by ID
     Delete {
+        #[arg(short, long)]
+        id: String,
+    },
+
+    /// Update master password by ID
+    Update {
         #[arg(short, long)]
         id: String,
     },
@@ -156,6 +164,40 @@ fn main() {
                         }
                         Err(_) => {
                             eprintln!("Master password is incorrect. Cannot delete.");
+                        }
+                    }
+                }
+                Ok(_) => {
+                    println!("No password found with ID {}.", id);
+                }
+                Err(e) => {
+                    eprintln!("Error retrieving password: {}", e);
+                }
+            }
+        }
+        Commands::Update { id } => {
+            let result = get_password_by_id(&conn, id);
+            match result {
+                Ok(passwords) if !passwords.is_empty() => {
+                    let pw = &passwords[0];
+
+                    match pw.decrypted_secret(&master_password) {
+                        Ok(secret) => {
+                            // Get new master password from prompt
+                            let new_master_password = prompt_password("Enter master password: ")
+                                .expect("Failed to read password");
+
+                            // Decryption succeeded — proceed to update
+                            match update_password_by_id(&conn, id, &secret, &new_master_password) {
+                                Ok(updated) if updated > 0 => {
+                                    println!("Password with ID {} updated.", id)
+                                }
+                                Ok(_) => println!("No password found with ID {}.", id),
+                                Err(e) => eprintln!("Error updating password: {}", e),
+                            }
+                        }
+                        Err(_) => {
+                            eprintln!("Master password is incorrect. Cannot update.");
                         }
                     }
                 }

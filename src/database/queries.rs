@@ -83,3 +83,19 @@ pub fn get_password_by_service(conn: &Connection, service: &str) -> Result<Vec<P
 pub fn delete_password_by_id(conn: &Connection, id: &str) -> Result<usize> {
     conn.execute("DELETE FROM passwords WHERE id = ?1", params![id])
 }
+
+pub fn update_password_by_id(
+    conn: &Connection,
+    id: &str,
+    secret: &str,
+    new_master_pass: &str,
+) -> Result<usize> {
+    let encrypted = encrypt(new_master_pass, secret).map_err(|e| {
+        Error::ToSqlConversionFailure(Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)))
+    })?;
+
+    conn.execute(
+        "UPDATE passwords SET secret = ?1 WHERE id = ?2",
+        params![encrypted, id],
+    )
+}
