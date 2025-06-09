@@ -1,0 +1,1 @@
+# RUST CLI - Password Manager
