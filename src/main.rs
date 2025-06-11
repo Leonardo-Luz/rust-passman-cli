@@ -29,7 +29,7 @@ enum Commands {
         service: String,
 
         #[arg(short, long)]
-        secret: String,
+        secret: Option<String>,
 
         #[arg(short, long)]
         description: Option<String>,
@@ -79,6 +79,11 @@ fn main() {
             secret,
             description,
         } => {
+            let secret = match secret {
+                Some(pwd) => pwd,
+                None => &prompt_password("Enter secret: ").expect("Failed to read secret"),
+            };
+
             // If secret starts with '@', read from the file; else use as is
             let final_secret = if let Some(file_path) = secret.strip_prefix('@') {
                 std::fs::read_to_string(file_path)
@@ -184,8 +189,9 @@ fn main() {
                     match pw.decrypted_secret(&master_password) {
                         Ok(secret) => {
                             // Get new master password from prompt
-                            let new_master_password = prompt_password("Enter master password: ")
-                                .expect("Failed to read password");
+                            let new_master_password =
+                                prompt_password("Enter new master password: ")
+                                    .expect("Failed to read password");
 
                             // Decryption succeeded — proceed to update
                             match update_password_by_id(&conn, id, &secret, &new_master_password) {
