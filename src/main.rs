@@ -6,9 +6,11 @@ use crate::database::queries::{
 };
 use rpassword::prompt_password;
 
-use clap::{Parser, Subcommand};
+use clap::{ArgGroup, Parser, Subcommand};
 
 use self::database::queries::update_password_by_id;
+
+use rand::seq::SliceRandom;
 
 #[derive(Parser)]
 #[command(name = "passman", about = "Encrypted Password Manager CLI")]
@@ -22,15 +24,26 @@ pub struct Cli {
 }
 
 #[derive(Subcommand)]
-enum Commands {
+pub enum Commands {
     /// Add a new password entry
+    #[command(group(
+        ArgGroup::new("secret_input")
+            .args(&["secret", "generate_secret"]),
+    ))]
     Add {
+        /// Name of the service
         #[arg(short, long)]
         service: String,
 
+        /// Manually provide the secret or @filename to read from
         #[arg(short, long)]
         secret: Option<String>,
 
+        /// Generate a secure random password instead
+        #[arg(long = "generate-secret")]
+        generate_secret: bool,
+
+        /// Optional description of the entry
         #[arg(short, long)]
         description: Option<String>,
     },
@@ -41,11 +54,9 @@ enum Commands {
     /// Get password by ID or service name (decrypted)
     Get {
         /// Either "id" or "service"
-        #[arg()]
         field: String,
 
         /// The value to search for (ID or service)
-        #[arg()]
         value: String,
     },
 
@@ -77,27 +88,33 @@ fn main() {
         Commands::Add {
             service,
             secret,
+            generate_secret,
             description,
         } => {
-            let secret = match secret {
-                Some(pwd) => pwd,
-                None => &prompt_password("Enter secret: ").expect("Failed to read secret"),
-            };
-
-            // If secret starts with '@', read from the file; else use as is
-            let final_secret = if let Some(file_path) = secret.strip_prefix('@') {
-                std::fs::read_to_string(file_path)
-                    .expect("Failed to read secret file")
-                    .trim_end_matches('\n')
-                    .to_string()
+            let final_secret = if *generate_secret {
+                let pwd = generate_password(32);
+                println!("Generated secret: {}", pwd);
+                pwd
             } else {
-                secret.clone()
+                let temp_secret = match secret {
+                    Some(pwd) => pwd,
+                    None => &prompt_password("Enter secret: ").expect("Failed to read secret"),
+                };
+
+                if let Some(file_path) = temp_secret.strip_prefix('@') {
+                    std::fs::read_to_string(file_path)
+                        .expect("Failed to read secret file")
+                        .trim_end()
+                        .to_string()
+                } else {
+                    temp_secret.clone()
+                }
             };
 
             insert_password(
                 &conn,
                 &master_password,
-                service,
+                &service,
                 &final_secret,
                 description.as_deref(),
             )
@@ -216,4 +233,28 @@ fn main() {
             }
         }
     }
+}
+
+fn generate_password(length: usize) -> String {
+    const LOWER: &[u8] = b"abcdefghijkmnopqrstuvwxyz";
+    const UPPER: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ";
+    const DIGITS: &[u8] = b"23456789";
+    const SYMBOLS: &[u8] = b"!@#$^&*()-_+";
+
+    let mut rng = rand::thread_rng();
+
+    let mut password = vec![
+        *LOWER.choose(&mut rng).unwrap() as char,
+        *UPPER.choose(&mut rng).unwrap() as char,
+        *DIGITS.choose(&mut rng).unwrap() as char,
+        *SYMBOLS.choose(&mut rng).unwrap() as char,
+    ];
+
+    let all_chars: Vec<u8> = [LOWER, UPPER, DIGITS, SYMBOLS].concat();
+    for _ in password.len()..length {
+        password.push(*all_chars.choose(&mut rng).unwrap() as char);
+    }
+
+    password.shuffle(&mut rng);
+    password.into_iter().collect()
 }
