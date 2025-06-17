@@ -99,3 +99,69 @@ pub fn update_password_by_id(
         params![encrypted, id],
     )
 }
+
+pub fn save_backup(
+    conn: &Connection,
+    path: &str,
+    master_password: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut stmt = conn.prepare("SELECT id, service, secret, description FROM passwords")?;
+    let entries = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,         // id
+                row.get::<_, String>(1)?,         // service
+                row.get::<_, String>(2)?,         // secret
+                row.get::<_, Option<String>>(3)?, // description
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let plain_text = entries
+        .iter()
+        .map(|(id, service, secret, desc)| {
+            format!(
+                "{}|{}|{}|{}",
+                id,
+                service,
+                secret,
+                desc.clone().unwrap_or_default()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let encrypted = encrypt(master_password, &plain_text)?;
+    std::fs::write(path, encrypted)?;
+    Ok(())
+}
+
+pub fn load_backup(
+    conn: &Connection,
+    path: &str,
+    master_password: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let encrypted = std::fs::read_to_string(path)?;
+    let decrypted = decrypt(master_password, &encrypted)?;
+
+    for line in decrypted.lines() {
+        let fields: Vec<&str> = line.splitn(4, '|').collect();
+        if fields.len() >= 3 {
+            let id = fields[0];
+            let service = fields[1];
+            let secret = fields[2];
+            let description = if fields.len() == 4 && !fields[3].is_empty() {
+                Some(fields[3])
+            } else {
+                None
+            };
+
+            conn.execute(
+                "INSERT OR IGNORE INTO passwords (id, service, secret, description) VALUES (?1, ?2, ?3, ?4)",
+                (&id, &service, &secret, &description),
+            )?;
+        }
+    }
+
+    Ok(())
+}

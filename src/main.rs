@@ -8,7 +8,7 @@ use rpassword::prompt_password;
 
 use clap::{ArgGroup, Parser, Subcommand};
 
-use self::database::queries::update_password_by_id;
+use self::database::queries::{load_backup, save_backup, update_password_by_id};
 
 use rand::seq::SliceRandom;
 
@@ -70,6 +70,18 @@ pub enum Commands {
     Update {
         #[arg(short, long)]
         id: String,
+    },
+
+    /// Save encrypted backup to a file
+    Save {
+        #[arg(short, long)]
+        file: Option<String>,
+    },
+
+    /// Load and decrypt backup from a file
+    Load {
+        #[arg(short, long)]
+        file: Option<String>,
     },
 }
 
@@ -230,6 +242,24 @@ fn main() {
                 Err(e) => {
                     eprintln!("Error retrieving password: {}", e);
                 }
+            }
+        }
+        Commands::Save { file } => {
+            let file_path = file.clone().unwrap_or_else(|| "passman.bak".to_string());
+
+            let result = save_backup(&conn, &file_path, &master_password);
+            match result {
+                Ok(_) => println!("Backup saved to {}", file_path),
+                Err(_) => println!("Failed to save backup in {}", file_path),
+            }
+        }
+        Commands::Load { file } => {
+            let file_path = file.clone().unwrap_or_else(|| "passman.bak".to_string());
+            let result = load_backup(&conn, &file_path, &master_password);
+
+            match result {
+                Ok(_) => println!("Backup loaded from {}", file_path),
+                Err(_) => println!("Failed to load backup from {}", file_path),
             }
         }
     }
