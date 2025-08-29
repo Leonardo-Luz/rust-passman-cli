@@ -12,8 +12,8 @@
 
 ## Requirements
 
-* Rust (with Cargo)
-* SQLite (usually included in your system's package manager)
+* Rust
+* SQLite
 
 ## Installation
 
